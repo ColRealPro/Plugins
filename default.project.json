@@ -1,0 +1,21 @@
+{
+  "name": "Plugins",
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedStorage": {
+      "plugins": {
+        "$className": "Folder",
+        "$path": "src"
+      },
+      "tests": {
+        "$className": "Folder",
+        "$path": "tests"
+      },
+      "Packages":{
+        "$className": "Folder",
+        "$path": "packages"
+       }
+    }
+  }
+}

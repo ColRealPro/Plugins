@@ -1,0 +1,10 @@
+{
+  "languageMode": "strict",
+  "globals": [
+    "afterEach",
+    "beforeEach",
+    "describe",
+    "expect",
+    "it"
+  ]
+}
