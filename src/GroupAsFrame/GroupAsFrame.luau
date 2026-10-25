@@ -18,6 +18,7 @@ export type FailureReason =
 	| "TargetAutomaticSize"
 	| "TargetHasLayout"
 	| "InvalidPreparedReparent"
+	| "ReparentToSelf"
 
 export type GroupRecord = {
 	object: GuiObject,
@@ -64,17 +65,18 @@ export type GroupOptions = {
 }
 
 local FAILURE_MESSAGES: { [FailureReason]: string } = {
-	NoGuiObjects = "Select at least one GuiObject to group.",
-	NoCommonParent = "Selected GuiObjects do not share a GUI ancestor that can contain a Frame.",
-	NoBounds = "Could not calculate bounds for the selected GuiObjects.",
-	InvalidPreparedGroup = "The prepared group is missing required data.",
-	NoTargetFrame = "Set an existing GUI object (Frame, ImageLabel, TextButton, etc.) as the reparent target before reparenting.",
-	AmbiguousTargetFrame = "Select exactly one GUI object to set as the reparent target.",
-	InvalidTargetFrame = "The reparent target must be an existing GuiObject (Frame, ImageLabel, TextLabel, ImageButton, etc.).",
-	TargetDescendantOfSelection = "The reparent target cannot be inside one of the selected GuiObjects.",
-	TargetAutomaticSize = "The target uses AutomaticSize, so exact preservation cannot be guaranteed.",
-	TargetHasLayout = "The target contains a UILayout, so exact preservation cannot be guaranteed.",
-	InvalidPreparedReparent = "The prepared reparent operation is missing required data.",
+	NoGuiObjects = "Select at least one GuiObject to group",
+	NoCommonParent = "Selected GuiObjects do not share a GUI ancestor that can contain a Frame",
+	NoBounds = "Could not calculate bounds for the selected GuiObjects",
+	InvalidPreparedGroup = "The prepared group is missing required data",
+	NoTargetFrame = "Set an existing GUI object, like a Frame, ImageLabel, or TextButton, as the reparent target first",
+	AmbiguousTargetFrame = "Select exactly one GUI object to set as the reparent target",
+	InvalidTargetFrame = "The reparent target must be an existing GUI object, like a Frame, ImageLabel, or TextButton",
+	TargetDescendantOfSelection = "The reparent target cannot be inside one of the selected GuiObjects",
+	TargetAutomaticSize = "The target uses AutomaticSize, so exact preservation cannot be guaranteed",
+	TargetHasLayout = "The target contains a UILayout, so exact preservation cannot be guaranteed",
+	InvalidPreparedReparent = "The prepared reparent operation is missing required data",
+	ReparentToSelf = "Can't reparent UI to itself, silly!",
 }
 
 local function asGuiObject(instance: Instance): GuiObject?
@@ -352,10 +354,10 @@ end
 
 function GroupAsFrame.getFailureMessage(reason: FailureReason?): string
 	if reason == nil then
-		return "An unknown error occurred."
+		return "An unknown error occurred"
 	end
 
-	return FAILURE_MESSAGES[reason] or "An unknown error occurred."
+	return FAILURE_MESSAGES[reason] or "An unknown error occurred"
 end
 
 function GroupAsFrame.pickTargetFrame(selection: { Instance }): (boolean, GuiObject?, FailureReason?)
@@ -487,7 +489,9 @@ function GroupAsFrame.prepareReparent(selection: { Instance }, targetFrame: Inst
 	local collapsedObjects = collapseNestedSelections(targetlessObjects)
 
 	if #collapsedObjects == 0 then
-		return reparentFailure("NoGuiObjects", ignored, validTargetFrame)
+		-- Only the target itself was selected
+		local reason: FailureReason = if #targetlessObjects < #guiObjects then "ReparentToSelf" else "NoGuiObjects"
+		return reparentFailure(reason, ignored, validTargetFrame)
 	end
 
 	if hasSelectedAncestorOfTarget(collapsedObjects, validTargetFrame) then

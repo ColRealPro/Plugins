@@ -4,24 +4,27 @@ local ChangeHistoryService = game:GetService("ChangeHistoryService")
 local Selection = game:GetService("Selection")
 
 local GroupAsFrame = require(script.GroupAsFrame)
+local Notifications = require(script.Notifications)
+
+local ICON = "rbxassetid://131620670327497"
 
 local toolbar = plugin:CreateToolbar("Group As Frame")
 local button = toolbar:CreateButton(
 	"GroupAsFrame",
 	"Group selected UI objects into an invisible frame",
-	"rbxassetid://131620670327497",
+	ICON,
 	"Group as Frame"
 )
 local setTargetButton = toolbar:CreateButton(
 	"SetReparentTargetFrame",
-	"Use the selected GUI object (Frame, ImageLabel, TextButton, etc.) as the reparent target",
-	"rbxassetid://131620670327497",
+	"Use the selected GUI object, like a Frame, ImageLabel, or TextButton, as the reparent target",
+	ICON,
 	"Set Target"
 )
 local reparentButton = toolbar:CreateButton(
 	"ReparentToTargetFrame",
 	"Reparent selected UI objects to the target GUI object",
-	"rbxassetid://131620670327497",
+	ICON,
 	"Reparent UI"
 )
 
@@ -29,13 +32,39 @@ button.ClickableWhenViewportHidden = true
 setTargetButton.ClickableWhenViewportHidden = true
 reparentButton.ClickableWhenViewportHidden = true
 
+local notifications = Notifications.new(plugin, ICON)
+plugin.Unloading:Connect(notifications.destroy)
+
 local targetFrame: GuiObject? = nil
 local targetFrameConnection: RBXScriptConnection? = nil
 
-local function warnIgnoredObjects(count: number)
+local function pluralize(count: number, noun: string): string
+	return `{count} {noun}{if count == 1 then "" else "s"}`
+end
+
+local function notifyIgnoredObjects(count: number)
 	if count > 0 then
-		warn(("[Group as Frame] Ignored %d selected instance(s) that are not GuiObjects."):format(count))
+		notifications.notify(
+			`Ignored {pluralize(count, "selected instance")} that {if count == 1 then "is" else "are"} not UI objects`,
+			{ kind = "warning" }
+		)
 	end
+end
+
+local function notifyFailure(reason: GroupAsFrame.FailureReason?)
+	notifications.notify(GroupAsFrame.getFailureMessage(reason), { kind = "error" })
+end
+
+local function notifyUnexpectedError(action: string, message: any)
+	-- Keep the full error in Output since it points at a bug rather than a bad selection
+	warn(`[Group as Frame] Failed while {action}: {tostring(message)}`)
+	notifications.notify(`Something went wrong while {action}, see Output for details`, {
+		kind = "error",
+	})
+end
+
+local function notifyRecordingFailed()
+	notifications.notify("Could not start an undo recording, so no changes were made", { kind = "error" })
 end
 
 local function clearTargetFrame()
@@ -54,27 +83,24 @@ local function setTargetFrame(frame: GuiObject)
 	targetFrameConnection = frame.AncestryChanged:Connect(function()
 		if frame.Parent == nil then
 			clearTargetFrame()
+			notifications.notify(`Reparent target "{frame.Name}" was removed, so it has been cleared`)
 		end
 	end)
 	setTargetButton:SetActive(true)
 end
 
-local function warnFailure(prefix: string, reason: GroupAsFrame.FailureReason?)
-	warn(("[%s] %s"):format(prefix, GroupAsFrame.getFailureMessage(reason)))
-end
-
 button.Click:Connect(function()
 	local prepared = GroupAsFrame.prepare(Selection:Get())
 	if not prepared.ok then
-		warnFailure("Group as Frame", prepared.reason)
+		notifyFailure(prepared.reason)
 		return
 	end
 
-	warnIgnoredObjects(#prepared.ignored)
+	notifyIgnoredObjects(#prepared.ignored)
 
 	local recording = ChangeHistoryService:TryBeginRecording("GroupAsFrame", "Group as Frame")
 	if recording == nil then
-		warn("[Group as Frame] Could not start an undo recording, so no changes were made.")
+		notifyRecordingFailed()
 		return
 	end
 
@@ -85,13 +111,17 @@ button.Click:Connect(function()
 	if ok and result.ok and result.frame ~= nil then
 		ChangeHistoryService:FinishRecording(recording, Enum.FinishRecordingOperation.Commit)
 		Selection:Set({ result.frame })
+		notifications.notify(
+			`Grouped {pluralize(#result.groupedObjects, "object")} into "{result.frame.Name}"`,
+			{ kind = "success" }
+		)
 	else
 		ChangeHistoryService:FinishRecording(recording, Enum.FinishRecordingOperation.Cancel)
 
 		if ok then
-			warnFailure("Group as Frame", result.reason)
+			notifyFailure(result.reason)
 		else
-			warn(("[Group as Frame] Failed while grouping: %s"):format(tostring(result)))
+			notifyUnexpectedError("grouping", result)
 		end
 	end
 end)
@@ -99,36 +129,37 @@ end)
 setTargetButton.Click:Connect(function()
 	local ok, frame, reason = GroupAsFrame.pickTargetFrame(Selection:Get())
 	if not ok or frame == nil then
-		warnFailure("Group as Frame", reason)
+		notifyFailure(reason)
 		return
 	end
 
 	setTargetFrame(frame)
+	notifications.notify(`Reparent target set to "{frame.Name}"`, { kind = "success" })
 end)
 
 reparentButton.Click:Connect(function()
 	if targetFrame == nil then
-		warnFailure("Group as Frame", "NoTargetFrame")
+		notifyFailure("NoTargetFrame")
 		return
 	end
 
 	if targetFrame.Parent == nil then
 		clearTargetFrame()
-		warnFailure("Group as Frame", "InvalidTargetFrame")
+		notifyFailure("InvalidTargetFrame")
 		return
 	end
 
 	local prepared = GroupAsFrame.prepareReparent(Selection:Get(), targetFrame)
-	warnIgnoredObjects(#prepared.ignored)
+	notifyIgnoredObjects(#prepared.ignored)
 
 	if not prepared.ok then
-		warnFailure("Group as Frame", prepared.reason)
+		notifyFailure(prepared.reason)
 		return
 	end
 
 	local recording = ChangeHistoryService:TryBeginRecording("ReparentToTargetFrame", "Reparent to Target Frame")
 	if recording == nil then
-		warn("[Group as Frame] Could not start an undo recording, so no changes were made.")
+		notifyRecordingFailed()
 		return
 	end
 
@@ -139,13 +170,17 @@ reparentButton.Click:Connect(function()
 	if ok and result.ok and result.frame ~= nil then
 		ChangeHistoryService:FinishRecording(recording, Enum.FinishRecordingOperation.Commit)
 		Selection:Set({ result.frame })
+		notifications.notify(
+			`Moved {pluralize(#result.groupedObjects, "object")} into "{result.frame.Name}"`,
+			{ kind = "success" }
+		)
 	else
 		ChangeHistoryService:FinishRecording(recording, Enum.FinishRecordingOperation.Cancel)
 
 		if ok then
-			warnFailure("Group as Frame", result.reason)
+			notifyFailure(result.reason)
 		else
-			warn(("[Group as Frame] Failed while reparenting: %s"):format(tostring(result)))
+			notifyUnexpectedError("reparenting", result)
 		end
 	end
 end)

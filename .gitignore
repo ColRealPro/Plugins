@@ -7,3 +7,4 @@
 /*.rbxlx.lock
 /*.install.project.json
 .DS_Store
+/src/*/Packages/

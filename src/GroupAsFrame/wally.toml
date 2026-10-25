@@ -1,0 +1,11 @@
+[package]
+name = "owner/group-as-frame"
+version = "0.1.0"
+registry = "https://github.com/UpliftGames/wally-index"
+realm = "shared"
+private = true
+
+[dependencies]
+Promise = "evaera/promise@4.0.0"
+React = "roblox/react@17.3.13"
+ReactRoblox = "roblox/react-roblox@17.3.13"

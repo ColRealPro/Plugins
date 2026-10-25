@@ -1,5 +1,6 @@
 {
   "name": "Plugins",
+  "globIgnorePaths": ["src/*/wally.toml", "src/*/wally.lock"],
   "tree": {
     "$className": "DataModel",
 

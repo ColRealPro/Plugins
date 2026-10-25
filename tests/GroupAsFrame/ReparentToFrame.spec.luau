@@ -550,7 +550,7 @@ return function()
 			expectReparentFailure(expect, {}, target, "NoGuiObjects", {})
 			local nonUi = expectReparentFailure(expect, { folder }, target, "NoGuiObjects", {})
 			expect(#nonUi.ignored).to.equal(1)
-			expectReparentFailure(expect, { target }, target, "NoGuiObjects", {})
+			expectReparentFailure(expect, { target }, target, "ReparentToSelf", {})
 			folder:Destroy()
 		end)
 

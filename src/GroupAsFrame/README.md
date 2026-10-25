@@ -10,7 +10,7 @@ The **Group As Frame** toolbar has three controls:
 | **Set Target** | Select exactly one existing GUI container, then click to remember it as the reparent target. Frames, image labels, text buttons, and other `GuiObject` instances are accepted |
 | **Reparent UI** | Select the UI objects to move, then click to move them into the remembered target |
 
-Grouping and reparenting support Studio undo. Non-UI selections are ignored; selected descendants stay with their selected ancestor. Warnings appear in Studio's Output window when an operation cannot proceed
+Grouping and reparenting support Studio undo. Non-UI selections are ignored; selected descendants stay with their selected ancestor. A notification appears in the corner of the viewport when an operation finishes or cannot proceed
 
 ## Layout behavior
 

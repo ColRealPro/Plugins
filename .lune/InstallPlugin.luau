@@ -417,21 +417,14 @@ local function removeTemporaryFile(path: string)
 	end
 end
 
-local function temporaryFolder(repositoryRoot: string): string
-	for _, variable in { "TEMP", "TMPDIR", "TMP" } do
-		local path = process.env[variable]
-		if path and isDirectory(expandPath(path)) then
-			return expandPath(path)
-		end
-	end
-	return repositoryRoot
-end
-
 -- Plugin folders without their own project file get a throwaway one so Rojo builds the folder as the plugin root
+-- It is written to the repository root because Rojo only applies globIgnorePaths below the project file's folder
 local function writeGeneratedProject(project: PluginProject, repositoryRoot: string): string
-	local projectPath = joinPath(temporaryFolder(repositoryRoot), `.{project.name}.install.project.json`)
+	local projectPath = joinPath(repositoryRoot, `.{project.name}.install.project.json`)
 	local contents = serde.encode("json", {
 		name = project.name,
+		-- Wally files sit next to the plugin code and would otherwise build as a ModuleScript
+		globIgnorePaths = { `src/{project.name}/wally.toml`, `src/{project.name}/wally.lock` },
 		tree = {
 			["$path"] = project.folder,
 		},
@@ -445,7 +438,8 @@ end
 
 local function installProject(project: PluginProject, repositoryRoot: string, pluginFolder: string): string
 	local destination = joinPath(pluginFolder, project.name .. ".rbxm")
-	local temporary = joinPath(pluginFolder, `.{project.name}.installing.rbxm`)
+	-- Built outside the plugin folder, otherwise Studio tries to load the half written file
+	local temporary = joinPath(repositoryRoot, `.{project.name}.installing.rbxm`)
 	removeTemporaryFile(temporary)
 
 	-- Plugins with their own Wally packages need them installed before Rojo can build them
@@ -481,8 +475,12 @@ local function installProject(project: PluginProject, repositoryRoot: string, pl
 
 	local moved, moveError = pcall(fs.move, temporary, destination, true)
 	if not moved then
+		-- Moving fails across drives, so fall back to copying
+		local copied, copyError = pcall(fs.copy, temporary, destination, true)
 		removeTemporaryFile(temporary)
-		error(`Could not install {project.name}\n{tostring(moveError)}`)
+		if not copied then
+			error(`Could not install {project.name}\n{tostring(moveError)}\n{tostring(copyError)}`)
+		end
 	end
 	return destination
 end
