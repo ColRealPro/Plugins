@@ -1,0 +1,106 @@
+name: Release plugins
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - src/**
+      - rokit.toml
+      - .lune/InstallPlugin.luau
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: plugin-releases-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Find changed plugins
+        id: plugins
+        shell: python
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          entries = [
+              "default.project.json", "init.server.luau", "init.client.luau",
+              "init.luau", "init.server.lua", "init.client.lua",
+          ]
+          plugins = sorted(
+              folder.name for folder in Path("src").glob("*")
+              if folder.is_dir() and any((folder / entry).is_file() for entry in entries)
+          )
+          before = os.environ.get("BEFORE", "")
+          release_all = os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or not before.strip("0")
+          if not release_all:
+              baseline = subprocess.run(["git", "cat-file", "-e", before + "^{commit}"], capture_output=True)
+              release_all = baseline.returncode != 0
+          if not release_all:
+              changed = subprocess.check_output([
+                  "git", "diff", "--name-only", "--no-renames", "-z",
+                  before, os.environ["GITHUB_SHA"], "--",
+              ]).decode().split("\0")
+              shared = {"rokit.toml", ".lune/InstallPlugin.luau", ".github/workflows/release.yml"}
+              if not shared.intersection(changed):
+                  plugins = [name for name in plugins if any(path.startswith(f"src/{name}/") for path in changed)]
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write("plugins=" + json.dumps(plugins) + "\n")
+          print("Plugins to release: " + (", ".join(plugins) or "none"))
+
+      - name: Install tools
+        if: steps.plugins.outputs.plugins != '[]'
+        uses: CompeyDev/setup-rokit@1d9390883f7ebce19d48f5b8d006e11d387c92ab # v0.2.1
+
+      - name: Build and release plugins
+        if: steps.plugins.outputs.plugins != '[]'
+        shell: python
+        env:
+          PLUGINS: ${{ steps.plugins.outputs.plugins }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          plugins = json.loads(os.environ["PLUGINS"])
+          artifacts = Path(os.environ["RUNNER_TEMP"]) / "plugins"
+          artifacts.mkdir(exist_ok=True)
+          subprocess.run([
+              "lune", "run", "InstallPlugin", *plugins,
+              "--yes", "--plugins-path", str(artifacts),
+          ], check=True)
+
+          sha = os.environ["GITHUB_SHA"]
+          for plugin in plugins:
+              tag = f"{plugin}-{sha[:12]}"
+              subprocess.run(["git", "check-ref-format", f"refs/tags/{tag}"], check=True)
+              existing = subprocess.run(["gh", "release", "view", tag], capture_output=True)
+              if existing.returncode == 0:
+                  print(f"Release {tag} already exists, skipping")
+                  continue
+              subprocess.run([
+                  "gh", "release", "create", tag, str(artifacts / f"{plugin}.rbxm"),
+                  "--target", sha,
+                  "--title", f"{plugin} ({sha[:7]})",
+                  "--notes", f"Automated build of {plugin} from commit {sha}",
+                  "--latest=false",
+              ], check=True)
