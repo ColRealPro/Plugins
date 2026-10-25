@@ -1,8 +1,6 @@
 --!nonstrict
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local Geometry = require(ReplicatedStorage.plugins.GroupAsFrame.Geometry)
+local Geometry = require(script.Parent.Parent.Parent.plugins.GroupAsFrame.Geometry)
 
 local Helpers = {}
 
@@ -78,14 +76,19 @@ function Helpers.gui(className, parent, props)
 	return gui
 end
 
-function Helpers.snapshot(objects)
+function Helpers.snapshot(objects, rectGetter)
 	local snapshots = {}
+	local getRect = rectGetter or Geometry.getAbsoluteRect
 
 	for _, object in objects do
-		snapshots[object] = Geometry.getAbsoluteRect(object)
+		snapshots[object] = getRect(object)
 	end
 
 	return snapshots
+end
+
+function Helpers.snapshotUnscrolled(objects)
+	return Helpers.snapshot(objects, Geometry.getUnscrolledAbsoluteRect)
 end
 
 function Helpers.expectNumberClose(expectFn, actual, expected, tolerance)
@@ -105,10 +108,20 @@ function Helpers.expectRectClose(expectFn, actual, expected, tolerance)
 	Helpers.expectVectorClose(expectFn, actual.size, expected.size, tolerance)
 end
 
-function Helpers.expectPreserved(expectFn, snapshots, tolerance)
+function Helpers.expectPreservedWithGetter(expectFn, snapshots, rectGetter, tolerance)
+	local getRect = rectGetter or Geometry.getAbsoluteRect
+
 	for object, before in snapshots do
-		Helpers.expectRectClose(expectFn, Geometry.getAbsoluteRect(object), before, tolerance)
+		Helpers.expectRectClose(expectFn, getRect(object), before, tolerance)
 	end
+end
+
+function Helpers.expectPreserved(expectFn, snapshots, tolerance)
+	Helpers.expectPreservedWithGetter(expectFn, snapshots, Geometry.getAbsoluteRect, tolerance)
+end
+
+function Helpers.expectUnscrolledPreserved(expectFn, snapshots, tolerance)
+	Helpers.expectPreservedWithGetter(expectFn, snapshots, Geometry.getUnscrolledAbsoluteRect, tolerance)
 end
 
 function Helpers.destroy(instance)

@@ -48,10 +48,42 @@ local function paddingValue(udim: UDim, basis: number): number
 	return udim.Scale * basis + udim.Offset
 end
 
+local function getChildCoordinateSize(parent: GuiBase2d, parentRect: Rect): Vector2
+	if parent:IsA("ScrollingFrame") then
+		return (parent :: ScrollingFrame).AbsoluteCanvasSize
+	end
+
+	return parentRect.size
+end
+
 function Geometry.getAbsoluteRect(gui: GuiBase2d): Rect
 	return {
 		position = gui.AbsolutePosition,
 		size = gui.AbsoluteSize,
+	}
+end
+
+function Geometry.getScrollOffset(gui: Instance): Vector2
+	local offset = Vector2.zero
+	local current = gui.Parent
+
+	while current ~= nil do
+		if current:IsA("ScrollingFrame") then
+			offset += (current :: ScrollingFrame).CanvasPosition
+		end
+
+		current = current.Parent
+	end
+
+	return offset
+end
+
+function Geometry.getUnscrolledAbsoluteRect(gui: GuiBase2d): Rect
+	local rect = Geometry.getAbsoluteRect(gui)
+
+	return {
+		position = rect.position + Geometry.getScrollOffset(gui),
+		size = rect.size,
 	}
 end
 
@@ -94,29 +126,30 @@ function Geometry.getPaddingPixels(parent: Instance, parentSize: Vector2): Paddi
 	}
 end
 
-function Geometry.getChildCoordinateRect(parent: GuiBase2d): Rect
-	local parentRect = Geometry.getAbsoluteRect(parent)
+local function getChildCoordinateRectFromParentRect(parent: GuiBase2d, parentRect: Rect): Rect
 	local padding = Geometry.getPaddingPixels(parent, parentRect.size)
+	local coordinateSize = getChildCoordinateSize(parent, parentRect)
+	local insetX = math.min(padding.left, coordinateSize.X - padding.right)
+	local insetY = math.min(padding.top, coordinateSize.Y - padding.bottom)
 
-	local position = parentRect.position + Vector2.new(padding.left, padding.top)
+	local position = parentRect.position + Vector2.new(insetX, insetY)
 	local size = Vector2.new(
-		math.max(0, parentRect.size.X - padding.left - padding.right),
-		math.max(0, parentRect.size.Y - padding.top - padding.bottom)
+		math.max(0, coordinateSize.X - padding.left - padding.right),
+		math.max(0, coordinateSize.Y - padding.top - padding.bottom)
 	)
-
-	local scrollingFrame: ScrollingFrame? = nil
-	if parent:IsA("ScrollingFrame") then
-		scrollingFrame = parent :: ScrollingFrame
-	end
-
-	if scrollingFrame ~= nil then
-		position -= scrollingFrame.CanvasPosition
-	end
 
 	return {
 		position = position,
 		size = size,
 	}
+end
+
+function Geometry.getChildCoordinateRect(parent: GuiBase2d): Rect
+	return getChildCoordinateRectFromParentRect(parent, Geometry.getAbsoluteRect(parent))
+end
+
+function Geometry.getUnscrolledChildCoordinateRect(parent: GuiBase2d): Rect
+	return getChildCoordinateRectFromParentRect(parent, Geometry.getUnscrolledAbsoluteRect(parent))
 end
 
 function Geometry.getDirectUIScale(gui: Instance): number

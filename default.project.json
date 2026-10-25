@@ -12,10 +12,10 @@
         "$className": "Folder",
         "$path": "tests"
       },
-      "Packages":{
+      "Packages": {
         "$className": "Folder",
-        "$path": "packages"
-       }
+        "$path": "Packages"
+      }
     }
   }
 }

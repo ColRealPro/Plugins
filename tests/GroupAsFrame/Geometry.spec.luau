@@ -1,8 +1,6 @@
 --!nonstrict
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local Geometry = require(ReplicatedStorage.plugins.GroupAsFrame.Geometry)
+local Geometry = require(script.Parent.Parent.Parent.plugins.GroupAsFrame.Geometry)
 local Helpers = require(script.Parent.TestHelpers)
 
 return function()
@@ -129,6 +127,108 @@ return function()
 			Helpers.expectRectClose(expect, rect, {
 				position = Vector2.new(85, 40),
 				size = Vector2.new(690, 530),
+			})
+
+			screen:Destroy()
+		end)
+
+		it("clamps padded child coordinate origins when padding exceeds an axis", function()
+			local screen, root = Helpers.mountRoot()
+			local target = Helpers.gui("Frame", root, {
+				Position = UDim2.fromOffset(100, 100),
+				Size = UDim2.fromOffset(0, 120),
+			})
+			local padding = Instance.new("UIPadding")
+			padding.PaddingLeft = UDim.new(0, 10)
+			padding.PaddingRight = UDim.new(0, 5)
+			padding.PaddingTop = UDim.new(0, 20)
+			padding.PaddingBottom = UDim.new(0, 8)
+			padding.Parent = target
+			Helpers.settle()
+
+			local rect = Geometry.getChildCoordinateRect(target)
+
+			Helpers.expectRectClose(expect, rect, {
+				position = Vector2.new(95, 120),
+				size = Vector2.new(0, 92),
+			})
+
+			screen:Destroy()
+		end)
+
+		it("calculates unscrolled child coordinate rects for ScrollingFrames", function()
+			local screen, root = Helpers.mountRoot()
+			local scrollingFrame = Helpers.gui("ScrollingFrame", root, {
+				CanvasSize = UDim2.fromOffset(1200, 1200),
+				Position = UDim2.fromOffset(100, 120),
+				Size = UDim2.fromOffset(300, 200),
+			})
+			Helpers.settle()
+			scrollingFrame.CanvasPosition = Vector2.new(50, 70)
+			Helpers.settle()
+
+			local rect = Geometry.getUnscrolledChildCoordinateRect(scrollingFrame)
+
+			Helpers.expectRectClose(expect, rect, {
+				position = Vector2.new(100, 120),
+				size = Vector2.new(1200, 1200),
+			})
+
+			screen:Destroy()
+		end)
+
+		it("applies UIPadding to unscrolled ScrollingFrame child coordinate rects", function()
+			local screen, root = Helpers.mountRoot()
+			local scrollingFrame = Helpers.gui("ScrollingFrame", root, {
+				CanvasSize = UDim2.fromOffset(1200, 1200),
+				Position = UDim2.fromOffset(100, 120),
+				Size = UDim2.fromOffset(300, 200),
+			})
+			local padding = Instance.new("UIPadding")
+			padding.PaddingLeft = UDim.new(0.1, 5)
+			padding.PaddingRight = UDim.new(0, 12)
+			padding.PaddingTop = UDim.new(0.05, 10)
+			padding.PaddingBottom = UDim.new(0, 8)
+			padding.Parent = scrollingFrame
+			Helpers.settle()
+			scrollingFrame.CanvasPosition = Vector2.new(50, 70)
+			Helpers.settle()
+
+			local rect = Geometry.getUnscrolledChildCoordinateRect(scrollingFrame)
+
+			Helpers.expectRectClose(expect, rect, {
+				position = Vector2.new(135, 140),
+				size = Vector2.new(1153, 1172),
+			})
+
+			screen:Destroy()
+		end)
+
+		it("adds ancestor CanvasPosition values for unscrolled absolute rects", function()
+			local screen, root = Helpers.mountRoot()
+			local outer = Helpers.gui("ScrollingFrame", root, {
+				CanvasSize = UDim2.fromOffset(1600, 1600),
+				Position = UDim2.fromOffset(100, 80),
+				Size = UDim2.fromOffset(500, 400),
+			})
+			local inner = Helpers.gui("ScrollingFrame", outer, {
+				CanvasSize = UDim2.fromOffset(1000, 1000),
+				Position = UDim2.fromOffset(250, 220),
+				Size = UDim2.fromOffset(240, 180),
+			})
+			local child = Helpers.gui("Frame", inner, {
+				Position = UDim2.fromOffset(90, 100),
+				Size = UDim2.fromOffset(70, 60),
+			})
+			Helpers.settle()
+			outer.CanvasPosition = Vector2.new(20, 30)
+			inner.CanvasPosition = Vector2.new(40, 50)
+			Helpers.settle()
+
+			Helpers.expectVectorClose(expect, Geometry.getScrollOffset(child), Vector2.new(60, 80))
+			Helpers.expectRectClose(expect, Geometry.getUnscrolledAbsoluteRect(child), {
+				position = Vector2.new(440, 400),
+				size = Vector2.new(70, 60),
 			})
 
 			screen:Destroy()

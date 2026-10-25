@@ -1,14 +1,9 @@
-# Project place file
-/Plugins.rbxlx
-
-# Roblox Studio lock files
-/*.rbxlx.lock
+/Packages/
+/sourcemap.json
+/*.rbxl
+/*.rbxlx
+/*.rbxm
 /*.rbxl.lock
-
-sourcemap.json
-
-# Wally dependencies
-/Packages
-
-# Generated test place
-/PluginsTests.rbxlx
+/*.rbxlx.lock
+/*.install.project.json
+.DS_Store

@@ -12,23 +12,41 @@ local function getTestRoot(): Instance
 	return testRoot
 end
 
-local function cloneTestRoot(): Instance
+local function getPluginRoot(): Instance
+	local pluginRoot = ReplicatedStorage:FindFirstChild("plugins")
+	if pluginRoot == nil then
+		error("Could not find ReplicatedStorage.plugins")
+	end
+
+	return pluginRoot
+end
+
+local function cloneRuntime(): (Instance, Instance)
+	local runtime = Instance.new("Folder")
+	runtime.Name = "_PluginTestRun"
+	runtime.Parent = TestService
+
+	local pluginRoot = getPluginRoot():Clone()
+	pluginRoot.Name = "plugins"
+	pluginRoot.Parent = runtime
+
 	local testRoot = getTestRoot():Clone()
-	testRoot.Name = "_GroupAsFrameTestRun"
-	testRoot.Parent = TestService
-	return testRoot
+	testRoot.Name = "tests"
+	testRoot.Parent = runtime
+
+	return runtime, testRoot
 end
 
 local function runTests()
 	local TestEZ = require(ReplicatedStorage.Packages.TestEZ) :: any
-	local testRoot = cloneTestRoot()
+	local runtime, testRoot = cloneRuntime()
 	local ok, results = pcall(function()
 		return TestEZ.TestBootstrap:run({
 			testRoot,
 		}, TestEZ.Reporters.TextReporter)
 	end)
 
-	testRoot:Destroy()
+	runtime:Destroy()
 
 	if not ok then
 		error(results, 0)
@@ -38,10 +56,10 @@ local function runTests()
 	local successCount = results.successCount :: number
 	local skippedCount = results.skippedCount :: number
 
-	print(("[GroupAsFrame Tests] %d passed, %d failed, %d skipped"):format(successCount, failureCount, skippedCount))
+	print(("[Plugin Tests] %d passed, %d failed, %d skipped"):format(successCount, failureCount, skippedCount))
 
 	if failureCount > 0 then
-		error(("[GroupAsFrame Tests] %d TestEZ test(s) failed."):format(failureCount))
+		error(("[Plugin Tests] %d TestEZ test(s) failed."):format(failureCount))
 	end
 
 	return results

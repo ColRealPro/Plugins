@@ -11,6 +11,13 @@ export type FailureReason =
 	| "NoCommonParent"
 	| "NoBounds"
 	| "InvalidPreparedGroup"
+	| "NoTargetFrame"
+	| "AmbiguousTargetFrame"
+	| "InvalidTargetFrame"
+	| "TargetDescendantOfSelection"
+	| "TargetAutomaticSize"
+	| "TargetHasLayout"
+	| "InvalidPreparedReparent"
 
 export type GroupRecord = {
 	object: GuiObject,
@@ -32,13 +39,24 @@ export type PreparedGroup = {
 	frameName: string,
 }
 
+export type PreparedReparent = {
+	ok: boolean,
+	reason: FailureReason?,
+	ignored: { Instance },
+	records: { GroupRecord },
+	targetFrame: GuiObject?,
+	targetFrameRect: Geometry.Rect?,
+}
+
+export type PreparedOperation = PreparedGroup | PreparedReparent
+
 export type GroupResult = {
 	ok: boolean,
 	reason: FailureReason?,
 	ignored: { Instance },
-	frame: Frame?,
+	frame: GuiObject?,
 	groupedObjects: { GuiObject },
-	prepared: PreparedGroup?,
+	prepared: PreparedOperation?,
 }
 
 export type GroupOptions = {
@@ -50,6 +68,13 @@ local FAILURE_MESSAGES: { [FailureReason]: string } = {
 	NoCommonParent = "Selected GuiObjects do not share a GUI ancestor that can contain a Frame.",
 	NoBounds = "Could not calculate bounds for the selected GuiObjects.",
 	InvalidPreparedGroup = "The prepared group is missing required data.",
+	NoTargetFrame = "Set an existing GUI object (Frame, ImageLabel, TextButton, etc.) as the reparent target before reparenting.",
+	AmbiguousTargetFrame = "Select exactly one GUI object to set as the reparent target.",
+	InvalidTargetFrame = "The reparent target must be an existing GuiObject (Frame, ImageLabel, TextLabel, ImageButton, etc.).",
+	TargetDescendantOfSelection = "The reparent target cannot be inside one of the selected GuiObjects.",
+	TargetAutomaticSize = "The target uses AutomaticSize, so exact preservation cannot be guaranteed.",
+	TargetHasLayout = "The target contains a UILayout, so exact preservation cannot be guaranteed.",
+	InvalidPreparedReparent = "The prepared reparent operation is missing required data.",
 }
 
 local function asGuiObject(instance: Instance): GuiObject?
@@ -63,6 +88,14 @@ end
 local function asGuiBase2d(instance: Instance): GuiBase2d?
 	if instance:IsA("GuiBase2d") then
 		return instance :: GuiBase2d
+	end
+
+	return nil
+end
+
+local function asTargetGuiObject(instance: Instance?): GuiObject?
+	if instance ~= nil and instance:IsA("GuiObject") then
+		return instance :: GuiObject
 	end
 
 	return nil
@@ -113,6 +146,18 @@ local function collapseNestedSelections(guiObjects: { GuiObject }): { GuiObject 
 	end
 
 	return collapsed
+end
+
+local function removeTargetFrameFromSelection(guiObjects: { GuiObject }, targetFrame: GuiObject): { GuiObject }
+	local filtered: { GuiObject } = {}
+
+	for _, guiObject in guiObjects do
+		if guiObject ~= targetFrame then
+			table.insert(filtered, guiObject)
+		end
+	end
+
+	return filtered
 end
 
 local function getGuiAncestorList(guiObject: GuiObject): { GuiBase2d }
@@ -174,6 +219,37 @@ end
 local function hasLayoutController(parent: Instance): boolean
 	for _, child in parent:GetChildren() do
 		if child:IsA("UILayout") then
+			return true
+		end
+	end
+
+	return false
+end
+
+local function getTargetFrameFailure(targetFrame: Instance?): (GuiObject?, FailureReason?)
+	local frame = asTargetGuiObject(targetFrame)
+	if targetFrame == nil then
+		return nil, "NoTargetFrame"
+	end
+
+	if frame == nil or frame.Parent == nil then
+		return nil, "InvalidTargetFrame"
+	end
+
+	if frame.AutomaticSize ~= Enum.AutomaticSize.None then
+		return nil, "TargetAutomaticSize"
+	end
+
+	if hasLayoutController(frame) then
+		return nil, "TargetHasLayout"
+	end
+
+	return frame, nil
+end
+
+local function hasSelectedAncestorOfTarget(guiObjects: { GuiObject }, targetFrame: GuiObject): boolean
+	for _, guiObject in guiObjects do
+		if guiObject:IsAncestorOf(targetFrame) then
 			return true
 		end
 	end
@@ -263,12 +339,40 @@ local function failure(reason: FailureReason, ignored: { Instance }?): PreparedG
 	}
 end
 
+local function reparentFailure(reason: FailureReason, ignored: { Instance }?, targetFrame: GuiObject?): PreparedReparent
+	return {
+		ok = false,
+		reason = reason,
+		ignored = ignored or {},
+		records = {},
+		targetFrame = targetFrame,
+		targetFrameRect = nil,
+	}
+end
+
 function GroupAsFrame.getFailureMessage(reason: FailureReason?): string
 	if reason == nil then
 		return "An unknown error occurred."
 	end
 
 	return FAILURE_MESSAGES[reason] or "An unknown error occurred."
+end
+
+function GroupAsFrame.pickTargetFrame(selection: { Instance }): (boolean, GuiObject?, FailureReason?)
+	if #selection == 0 then
+		return false, nil, "NoTargetFrame"
+	end
+
+	if #selection > 1 then
+		return false, nil, "AmbiguousTargetFrame"
+	end
+
+	local frame = asTargetGuiObject(selection[1])
+	if frame == nil or frame.Parent == nil then
+		return false, nil, "InvalidTargetFrame"
+	end
+
+	return true, frame, nil
 end
 
 function GroupAsFrame.prepare(selection: { Instance }, options: GroupOptions?): PreparedGroup
@@ -289,7 +393,7 @@ function GroupAsFrame.prepare(selection: { Instance }, options: GroupOptions?): 
 	local rects: { Geometry.Rect } = {}
 
 	for _, object in collapsedObjects do
-		local rect = Geometry.getAbsoluteRect(object)
+		local rect = Geometry.getUnscrolledAbsoluteRect(object)
 		table.insert(rects, rect)
 		table.insert(records, {
 			object = object,
@@ -312,7 +416,7 @@ function GroupAsFrame.prepare(selection: { Instance }, options: GroupOptions?): 
 		records = records,
 		commonParent = commonParent,
 		targetParent = targetParent,
-		targetParentRect = Geometry.getChildCoordinateRect(targetParent),
+		targetParentRect = Geometry.getUnscrolledChildCoordinateRect(targetParent),
 		bounds = bounds,
 		frameName = if options and options.frameName then options.frameName else DEFAULT_FRAME_NAME,
 	}
@@ -344,7 +448,7 @@ function GroupAsFrame.apply(prepared: PreparedGroup): GroupResult
 	frame.Position = Geometry.rectToPositionUDim2(prepared.bounds, frame.AnchorPoint, prepared.targetParentRect)
 	frame.Parent = prepared.targetParent
 
-	local frameRect = Geometry.getChildCoordinateRect(frame)
+	local frameRect = Geometry.getUnscrolledChildCoordinateRect(frame)
 
 	for _, record in prepared.records do
 		local object = record.object
@@ -371,6 +475,102 @@ function GroupAsFrame.apply(prepared: PreparedGroup): GroupResult
 	}
 end
 
+function GroupAsFrame.prepareReparent(selection: { Instance }, targetFrame: Instance?): PreparedReparent
+	local guiObjects, ignored = collectGuiObjects(selection)
+	local validTargetFrame, targetFailure = getTargetFrameFailure(targetFrame)
+	if validTargetFrame == nil then
+		local reason: FailureReason = if targetFailure ~= nil then targetFailure else "InvalidTargetFrame"
+		return reparentFailure(reason, ignored, nil)
+	end
+
+	local targetlessObjects = removeTargetFrameFromSelection(guiObjects, validTargetFrame)
+	local collapsedObjects = collapseNestedSelections(targetlessObjects)
+
+	if #collapsedObjects == 0 then
+		return reparentFailure("NoGuiObjects", ignored, validTargetFrame)
+	end
+
+	if hasSelectedAncestorOfTarget(collapsedObjects, validTargetFrame) then
+		return reparentFailure("TargetDescendantOfSelection", ignored, validTargetFrame)
+	end
+
+	local records: { GroupRecord } = {}
+
+	for _, object in collapsedObjects do
+		table.insert(records, {
+			object = object,
+			rect = Geometry.getUnscrolledAbsoluteRect(object),
+			anchorPoint = object.AnchorPoint,
+			layoutOrder = object.LayoutOrder,
+			zIndex = object.ZIndex,
+		})
+	end
+
+	return {
+		ok = true,
+		reason = nil,
+		ignored = ignored,
+		records = records,
+		targetFrame = validTargetFrame,
+		targetFrameRect = Geometry.getUnscrolledChildCoordinateRect(validTargetFrame),
+	}
+end
+
+function GroupAsFrame.applyReparent(prepared: PreparedReparent): GroupResult
+	if not prepared.ok or prepared.targetFrame == nil or prepared.targetFrameRect == nil then
+		return {
+			ok = false,
+			reason = "InvalidPreparedReparent",
+			ignored = prepared.ignored,
+			frame = nil,
+			groupedObjects = {},
+			prepared = prepared,
+		}
+	end
+
+	local targetFrame = prepared.targetFrame
+
+	for _, record in prepared.records do
+		local object = record.object
+		local position, size = Geometry.rectToUDim2(
+			record.rect,
+			record.anchorPoint,
+			prepared.targetFrameRect,
+			object.SizeConstraint,
+			Geometry.getDirectUIScale(object)
+		)
+
+		object.Parent = targetFrame
+		object.Size = size
+		object.Position = position
+	end
+
+	return {
+		ok = true,
+		reason = nil,
+		ignored = prepared.ignored,
+		frame = targetFrame,
+		groupedObjects = getGroupedObjects(prepared.records),
+		prepared = prepared,
+	}
+end
+
+function GroupAsFrame.reparentToFrame(selection: { Instance }, targetFrame: Instance?): GroupResult
+	local prepared = GroupAsFrame.prepareReparent(selection, targetFrame)
+	if not prepared.ok then
+		return {
+			ok = false,
+			reason = prepared.reason,
+			ignored = prepared.ignored,
+			frame = nil,
+			groupedObjects = {},
+			prepared = prepared,
+		}
+	end
+
+	return GroupAsFrame.applyReparent(prepared)
+end
+
 function GroupAsFrame.group(selection: { Instance }, options: GroupOptions?): GroupResult
 	local prepared = GroupAsFrame.prepare(selection, options)
 	if not prepared.ok then
@@ -392,6 +592,8 @@ GroupAsFrame._private = {
 	collapseNestedSelections = collapseNestedSelections,
 	findNearestCommonGuiBase2d = findNearestCommonGuiBase2d,
 	hasLayoutController = hasLayoutController,
+	getTargetFrameFailure = getTargetFrameFailure,
+	hasSelectedAncestorOfTarget = hasSelectedAncestorOfTarget,
 	resolveTargetParent = resolveTargetParent,
 }
 

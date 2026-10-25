@@ -1,9 +1,7 @@
 --!nonstrict
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local Geometry = require(ReplicatedStorage.plugins.GroupAsFrame.Geometry)
-local GroupAsFrame = require(ReplicatedStorage.plugins.GroupAsFrame.GroupAsFrame)
+local Geometry = require(script.Parent.Parent.Parent.plugins.GroupAsFrame.Geometry)
+local GroupAsFrame = require(script.Parent.Parent.Parent.plugins.GroupAsFrame.GroupAsFrame)
 local Helpers = require(script.Parent.TestHelpers)
 
 local TOLERANCE = 0.75
@@ -18,6 +16,24 @@ local function expectGroupPreserved(expectFn, selection, objects)
 	expectFn(result.frame ~= nil).to.equal(true)
 
 	Helpers.expectPreserved(expectFn, before, TOLERANCE)
+
+	for _, object in objects do
+		expectFn(object.Parent).to.equal(result.frame)
+	end
+
+	return result, before
+end
+
+local function expectGroupUnscrolledPreserved(expectFn, selection, objects)
+	Helpers.settle()
+	local before = Helpers.snapshotUnscrolled(objects)
+	local result = GroupAsFrame.group(selection)
+	Helpers.settle()
+
+	expectFn(result.ok).to.equal(true)
+	expectFn(result.frame ~= nil).to.equal(true)
+
+	Helpers.expectUnscrolledPreserved(expectFn, before, TOLERANCE)
 
 	for _, object in objects do
 		expectFn(object.Parent).to.equal(result.frame)
@@ -242,10 +258,9 @@ return function()
 			expectGroupPreserved(expect, { object }, { object })
 		end)
 
-		it("accounts for ScrollingFrame canvas position", function()
+		it("uses top-of-canvas coordinates for objects directly inside a ScrollingFrame", function()
 			local root = mount()
 			local scrollingFrame = Helpers.gui("ScrollingFrame", root, {
-				CanvasPosition = Vector2.new(30, 45),
 				CanvasSize = UDim2.fromOffset(1000, 1000),
 				Position = UDim2.fromOffset(100, 100),
 				Size = UDim2.fromOffset(300, 300),
@@ -254,9 +269,43 @@ return function()
 				Position = UDim2.fromOffset(150, 175),
 				Size = UDim2.fromOffset(80, 60),
 			})
+			Helpers.settle()
+			scrollingFrame.CanvasPosition = Vector2.new(30, 45)
+			Helpers.settle()
 
-			local result = expectGroupPreserved(expect, { object }, { object })
+			local result = expectGroupUnscrolledPreserved(expect, { object }, { object })
 			expect(result.frame.Parent).to.equal(scrollingFrame)
+			Helpers.expectRectClose(expect, Geometry.getUnscrolledAbsoluteRect(result.frame), {
+				position = Vector2.new(250, 275),
+				size = Vector2.new(80, 60),
+			}, TOLERANCE)
+		end)
+
+		it("uses top-of-canvas coordinates when grouping across a ScrollingFrame boundary", function()
+			local root = mount()
+			local scrollingFrame = Helpers.gui("ScrollingFrame", root, {
+				CanvasSize = UDim2.fromOffset(1000, 1000),
+				Position = UDim2.fromOffset(100, 100),
+				Size = UDim2.fromOffset(300, 300),
+			})
+			local inside = Helpers.gui("Frame", scrollingFrame, {
+				Position = UDim2.fromOffset(160, 180),
+				Size = UDim2.fromOffset(50, 60),
+			})
+			local outside = Helpers.gui("Frame", root, {
+				Position = UDim2.fromOffset(500, 120),
+				Size = UDim2.fromOffset(90, 70),
+			})
+			Helpers.settle()
+			scrollingFrame.CanvasPosition = Vector2.new(30, 45)
+			Helpers.settle()
+
+			local result = expectGroupUnscrolledPreserved(expect, { inside, outside }, { inside, outside })
+			expect(result.frame.Parent).to.equal(root)
+			Helpers.expectRectClose(expect, Geometry.getUnscrolledAbsoluteRect(result.frame), {
+				position = Vector2.new(260, 120),
+				size = Vector2.new(330, 220),
+			}, TOLERANCE)
 		end)
 
 		it("moves out of layout-controlled parents so UIListLayout does not reposition the group frame", function()
