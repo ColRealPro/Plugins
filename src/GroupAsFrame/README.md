@@ -15,7 +15,7 @@ Grouping and reparenting support Studio undo. Non-UI selections are ignored; sel
 ## Layout behavior
 
 - Positions and sizes are recalculated; the original mix of `UDim2` scale and offset values is not retained. Check the layout at other viewport sizes after grouping
-- Grouping uses the nearest shared GUI ancestor and moves the new frame above layout-controlled containers where possible
+- Grouping items in a `UIListLayout` keeps the new frame in the list. Grid, page, and table layouts are escaped
 - Reparenting rejects targets with `AutomaticSize` enabled or a child `UILayout`, since these can change the resulting layout
 - Scrolling frames use unscrolled canvas coordinates. Moving across scrolling boundaries can change the visible screen position
 - The existing tests cover anchors, padding, scrolling, size constraints, and UI scaling. Rotated GUI hierarchies are not covered

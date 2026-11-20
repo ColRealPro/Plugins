@@ -308,7 +308,7 @@ return function()
 			}, TOLERANCE)
 		end)
 
-		it("moves out of layout-controlled parents so UIListLayout does not reposition the group frame", function()
+		it("keeps the group frame inside a UIListLayout parent in the first grouped item's slot", function()
 			local root = mount()
 			local listParent = Helpers.gui("Frame", root, {
 				Position = UDim2.fromOffset(80, 90),
@@ -329,7 +329,43 @@ return function()
 			})
 
 			local result = expectGroupPreserved(expect, { first, second }, { first, second })
+			expect(result.frame.Parent).to.equal(listParent)
+			expect(result.frame.LayoutOrder).to.equal(1)
+		end)
+
+		it("escapes a UIListLayout parent when the selection lives inside different list items", function()
+			local root = mount()
+			local listParent = Helpers.gui("Frame", root, {
+				Position = UDim2.fromOffset(60, 60),
+				Size = UDim2.fromOffset(300, 400),
+			})
+			local layout = Instance.new("UIListLayout")
+			layout.SortOrder = Enum.SortOrder.LayoutOrder
+			layout.Padding = UDim.new(0, 5)
+			layout.Parent = listParent
+
+			local rowA = Helpers.gui("Frame", listParent, {
+				LayoutOrder = 1,
+				Size = UDim2.fromOffset(250, 60),
+			})
+			local rowB = Helpers.gui("Frame", listParent, {
+				LayoutOrder = 2,
+				Size = UDim2.fromOffset(250, 60),
+			})
+			local first = Helpers.gui("TextButton", rowA, {
+				Position = UDim2.fromOffset(10, 10),
+				Size = UDim2.fromOffset(50, 30),
+			})
+			local second = Helpers.gui("TextButton", rowB, {
+				Position = UDim2.fromOffset(100, 15),
+				Size = UDim2.fromOffset(60, 30),
+			})
+
+			Helpers.settle()
+			local rowsBefore = Helpers.snapshot({ rowA, rowB })
+			local result = expectGroupPreserved(expect, { first, second }, { first, second })
 			expect(result.frame.Parent).to.equal(root)
+			Helpers.expectPreserved(expect, rowsBefore, TOLERANCE)
 		end)
 
 		it("moves out of grid layout parents so UIGridLayout cannot resize the group frame", function()

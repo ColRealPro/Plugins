@@ -274,10 +274,46 @@ local function findNearestGuiParent(instance: Instance): GuiBase2d?
 	return nil
 end
 
-local function resolveTargetParent(commonParent: GuiBase2d): GuiBase2d
+local function hasSizeForcingLayout(parent: Instance): boolean
+	for _, child in parent:GetChildren() do
+		if child:IsA("UILayout") and not child:IsA("UIListLayout") then
+			return true
+		end
+	end
+
+	return false
+end
+
+local function hasListLayout(parent: Instance): boolean
+	return parent:FindFirstChildWhichIsA("UIListLayout") ~= nil
+end
+
+-- Layouts that force a child's size (grid cells, pages, table cells) would
+-- distort the group frame, so grouping escapes them. A UIListLayout only
+-- positions its children, so when every grouped object is a direct list item
+-- the group frame stays in the list and takes the slot of the earliest one.
+-- If the objects live inside different list items, the frame would become a
+-- new list entry and shift everything, so the list is escaped instead.
+local function canHostGroupFrame(parent: GuiBase2d, objects: { GuiObject }): boolean
+	if hasSizeForcingLayout(parent) then
+		return false
+	end
+
+	if hasListLayout(parent) then
+		for _, object in objects do
+			if object.Parent ~= parent then
+				return false
+			end
+		end
+	end
+
+	return true
+end
+
+local function resolveTargetParent(commonParent: GuiBase2d, objects: { GuiObject }): GuiBase2d
 	local targetParent = commonParent
 
-	while hasLayoutController(targetParent) do
+	while not canHostGroupFrame(targetParent, objects) do
 		local parent = findNearestGuiParent(targetParent)
 		if parent == nil then
 			break
@@ -390,7 +426,7 @@ function GroupAsFrame.prepare(selection: { Instance }, options: GroupOptions?): 
 		return failure("NoCommonParent", ignored)
 	end
 
-	local targetParent = resolveTargetParent(commonParent)
+	local targetParent = resolveTargetParent(commonParent, collapsedObjects)
 	local records: { GroupRecord } = {}
 	local rects: { Geometry.Rect } = {}
 
@@ -450,7 +486,12 @@ function GroupAsFrame.apply(prepared: PreparedGroup): GroupResult
 	frame.Position = Geometry.rectToPositionUDim2(prepared.bounds, frame.AnchorPoint, prepared.targetParentRect)
 	frame.Parent = prepared.targetParent
 
-	local frameRect = Geometry.getUnscrolledChildCoordinateRect(frame)
+	-- Inside a UIListLayout the list decides where the frame goes, and its
+	-- AbsolutePosition may not have updated yet. Lay the children out against
+	-- the original bounds so their spacing inside the frame is preserved.
+	local frameRect = if hasListLayout(prepared.targetParent)
+		then prepared.bounds
+		else Geometry.getUnscrolledChildCoordinateRect(frame)
 
 	for _, record in prepared.records do
 		local object = record.object
@@ -596,6 +637,7 @@ GroupAsFrame._private = {
 	collapseNestedSelections = collapseNestedSelections,
 	findNearestCommonGuiBase2d = findNearestCommonGuiBase2d,
 	hasLayoutController = hasLayoutController,
+	hasSizeForcingLayout = hasSizeForcingLayout,
 	getTargetFrameFailure = getTargetFrameFailure,
 	hasSelectedAncestorOfTarget = hasSelectedAncestorOfTarget,
 	resolveTargetParent = resolveTargetParent,
