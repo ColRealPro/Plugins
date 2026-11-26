@@ -17,13 +17,13 @@ local button = toolbar:CreateButton(
 )
 local setTargetButton = toolbar:CreateButton(
 	"SetReparentTargetFrame",
-	"Use the selected GUI object, like a Frame, ImageLabel, or TextButton, as the reparent target",
+	"Use the selected UI container, like a ScreenGui, SurfaceGui, Frame, or ImageLabel, as the reparent target",
 	ICON,
 	"Set Target"
 )
 local reparentButton = toolbar:CreateButton(
 	"ReparentToTargetFrame",
-	"Reparent selected UI objects to the target GUI object",
+	"Reparent selected UI objects into the target UI container",
 	ICON,
 	"Reparent UI"
 )
@@ -35,7 +35,7 @@ reparentButton.ClickableWhenViewportHidden = true
 local notifications = Notifications.new(plugin, ICON)
 plugin.Unloading:Connect(notifications.destroy)
 
-local targetFrame: GuiObject? = nil
+local targetFrame: GuiBase2d? = nil
 local targetFrameConnection: RBXScriptConnection? = nil
 
 local function pluralize(count: number, noun: string): string
@@ -77,7 +77,7 @@ local function clearTargetFrame()
 	setTargetButton:SetActive(false)
 end
 
-local function setTargetFrame(frame: GuiObject)
+local function setTargetFrame(frame: GuiBase2d)
 	clearTargetFrame()
 	targetFrame = frame
 	targetFrameConnection = frame.AncestryChanged:Connect(function()

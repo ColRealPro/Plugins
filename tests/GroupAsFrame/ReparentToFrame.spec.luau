@@ -588,7 +588,7 @@ return function()
 			end
 		end)
 
-		it("fails cleanly for missing, destroyed, and non-GuiObject targets", function()
+		it("fails cleanly for missing, destroyed, and non-GUI targets", function()
 			local root = mount()
 			local object = Helpers.gui("Frame", root, {
 				Position = UDim2.fromOffset(30, 40),
@@ -605,7 +605,6 @@ return function()
 			expectReparentFailure(expect, { object }, nil, "NoTargetFrame", { object })
 			expectReparentFailure(expect, { object }, destroyedTarget, "InvalidTargetFrame", { object })
 			expectReparentFailure(expect, { object }, folderTarget, "InvalidTargetFrame", { object })
-			expectReparentFailure(expect, { object }, root.Parent, "InvalidTargetFrame", { object })
 		end)
 
 		it("fails cleanly when a selected object is an ancestor of the target", function()
@@ -644,7 +643,43 @@ return function()
 			expectReparentFailure(expect, { object }, layoutTarget, "TargetHasLayout", { object })
 		end)
 
-		it("picks an existing GuiObject target only from an exact single selection", function()
+		it("reparents objects into a ScreenGui target", function()
+			local root, screen = mount()
+			local object = Helpers.gui("Frame", root, {
+				Position = UDim2.fromOffset(60, 90),
+				Size = UDim2.fromOffset(140, 100),
+			})
+			local label = Helpers.gui("TextLabel", root, {
+				Position = UDim2.fromOffset(260, 120),
+				Size = UDim2.fromOffset(120, 40),
+				Text = "Moved",
+			})
+			Helpers.settle()
+
+			local before = Helpers.snapshot({ object, label })
+			local result = GroupAsFrame.reparentToFrame({ object, label }, screen)
+			Helpers.settle()
+
+			expect(result.ok).to.equal(true)
+			expect(result.frame).to.equal(screen)
+			expect(object.Parent).to.equal(screen)
+			expect(label.Parent).to.equal(screen)
+			Helpers.expectPreserved(expect, before, TOLERANCE)
+		end)
+
+		it("fails cleanly for a ScreenGui target with a layout", function()
+			local root, screen = mount()
+			local object = Helpers.gui("Frame", root, {
+				Position = UDim2.fromOffset(35, 45),
+				Size = UDim2.fromOffset(90, 70),
+			})
+			local layout = Instance.new("UIGridLayout")
+			layout.Parent = screen
+
+			expectReparentFailure(expect, { object }, screen, "TargetHasLayout", { object })
+		end)
+
+		it("picks an existing GUI container target only from an exact single selection", function()
 			local root = mount()
 			local frame = Helpers.gui("Frame", root, {
 				Position = UDim2.fromOffset(10, 20),
@@ -677,6 +712,11 @@ return function()
 			expect(labelOk).to.equal(true)
 			expect(labelPicked).to.equal(textLabel)
 			expect(labelReason).to.equal(nil)
+
+			local screenOk, screenPicked, screenReason = GroupAsFrame.pickTargetFrame({ root.Parent })
+			expect(screenOk).to.equal(true)
+			expect(screenPicked).to.equal(root.Parent)
+			expect(screenReason).to.equal(nil)
 
 			local folder = Instance.new("Folder")
 			folder.Parent = root

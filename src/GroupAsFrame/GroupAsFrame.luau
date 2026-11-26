@@ -45,7 +45,7 @@ export type PreparedReparent = {
 	reason: FailureReason?,
 	ignored: { Instance },
 	records: { GroupRecord },
-	targetFrame: GuiObject?,
+	targetFrame: GuiBase2d?,
 	targetFrameRect: Geometry.Rect?,
 }
 
@@ -55,7 +55,7 @@ export type GroupResult = {
 	ok: boolean,
 	reason: FailureReason?,
 	ignored: { Instance },
-	frame: GuiObject?,
+	frame: GuiBase2d?,
 	groupedObjects: { GuiObject },
 	prepared: PreparedOperation?,
 }
@@ -69,9 +69,9 @@ local FAILURE_MESSAGES: { [FailureReason]: string } = {
 	NoCommonParent = "Selected GuiObjects do not share a GUI ancestor that can contain a Frame",
 	NoBounds = "Could not calculate bounds for the selected GuiObjects",
 	InvalidPreparedGroup = "The prepared group is missing required data",
-	NoTargetFrame = "Set an existing GUI object, like a Frame, ImageLabel, or TextButton, as the reparent target first",
-	AmbiguousTargetFrame = "Select exactly one GUI object to set as the reparent target",
-	InvalidTargetFrame = "The reparent target must be an existing GUI object, like a Frame, ImageLabel, or TextButton",
+	NoTargetFrame = "Set an existing UI container, like a ScreenGui, Frame, or ImageLabel, as the reparent target first",
+	AmbiguousTargetFrame = "Select exactly one UI container to set as the reparent target",
+	InvalidTargetFrame = "The reparent target must be an existing UI container, like a ScreenGui, SurfaceGui, Frame, or ImageLabel",
 	TargetDescendantOfSelection = "The reparent target cannot be inside one of the selected GuiObjects",
 	TargetAutomaticSize = "The target uses AutomaticSize, so exact preservation cannot be guaranteed",
 	TargetHasLayout = "The target contains a UILayout, so exact preservation cannot be guaranteed",
@@ -95,9 +95,11 @@ local function asGuiBase2d(instance: Instance): GuiBase2d?
 	return nil
 end
 
-local function asTargetGuiObject(instance: Instance?): GuiObject?
-	if instance ~= nil and instance:IsA("GuiObject") then
-		return instance :: GuiObject
+-- Any GuiBase2d can hold UI children: GuiObjects as well as layer collectors
+-- like ScreenGui, SurfaceGui, and BillboardGui
+local function asTargetGuiBase2d(instance: Instance?): GuiBase2d?
+	if instance ~= nil and instance:IsA("GuiBase2d") then
+		return instance :: GuiBase2d
 	end
 
 	return nil
@@ -150,7 +152,7 @@ local function collapseNestedSelections(guiObjects: { GuiObject }): { GuiObject 
 	return collapsed
 end
 
-local function removeTargetFrameFromSelection(guiObjects: { GuiObject }, targetFrame: GuiObject): { GuiObject }
+local function removeTargetFrameFromSelection(guiObjects: { GuiObject }, targetFrame: GuiBase2d): { GuiObject }
 	local filtered: { GuiObject } = {}
 
 	for _, guiObject in guiObjects do
@@ -228,8 +230,8 @@ local function hasLayoutController(parent: Instance): boolean
 	return false
 end
 
-local function getTargetFrameFailure(targetFrame: Instance?): (GuiObject?, FailureReason?)
-	local frame = asTargetGuiObject(targetFrame)
+local function getTargetFrameFailure(targetFrame: Instance?): (GuiBase2d?, FailureReason?)
+	local frame = asTargetGuiBase2d(targetFrame)
 	if targetFrame == nil then
 		return nil, "NoTargetFrame"
 	end
@@ -238,7 +240,7 @@ local function getTargetFrameFailure(targetFrame: Instance?): (GuiObject?, Failu
 		return nil, "InvalidTargetFrame"
 	end
 
-	if frame.AutomaticSize ~= Enum.AutomaticSize.None then
+	if frame:IsA("GuiObject") and (frame :: GuiObject).AutomaticSize ~= Enum.AutomaticSize.None then
 		return nil, "TargetAutomaticSize"
 	end
 
@@ -249,7 +251,7 @@ local function getTargetFrameFailure(targetFrame: Instance?): (GuiObject?, Failu
 	return frame, nil
 end
 
-local function hasSelectedAncestorOfTarget(guiObjects: { GuiObject }, targetFrame: GuiObject): boolean
+local function hasSelectedAncestorOfTarget(guiObjects: { GuiObject }, targetFrame: GuiBase2d): boolean
 	for _, guiObject in guiObjects do
 		if guiObject:IsAncestorOf(targetFrame) then
 			return true
@@ -377,7 +379,7 @@ local function failure(reason: FailureReason, ignored: { Instance }?): PreparedG
 	}
 end
 
-local function reparentFailure(reason: FailureReason, ignored: { Instance }?, targetFrame: GuiObject?): PreparedReparent
+local function reparentFailure(reason: FailureReason, ignored: { Instance }?, targetFrame: GuiBase2d?): PreparedReparent
 	return {
 		ok = false,
 		reason = reason,
@@ -396,7 +398,7 @@ function GroupAsFrame.getFailureMessage(reason: FailureReason?): string
 	return FAILURE_MESSAGES[reason] or "An unknown error occurred"
 end
 
-function GroupAsFrame.pickTargetFrame(selection: { Instance }): (boolean, GuiObject?, FailureReason?)
+function GroupAsFrame.pickTargetFrame(selection: { Instance }): (boolean, GuiBase2d?, FailureReason?)
 	if #selection == 0 then
 		return false, nil, "NoTargetFrame"
 	end
@@ -405,7 +407,7 @@ function GroupAsFrame.pickTargetFrame(selection: { Instance }): (boolean, GuiObj
 		return false, nil, "AmbiguousTargetFrame"
 	end
 
-	local frame = asTargetGuiObject(selection[1])
+	local frame = asTargetGuiBase2d(selection[1])
 	if frame == nil or frame.Parent == nil then
 		return false, nil, "InvalidTargetFrame"
 	end
